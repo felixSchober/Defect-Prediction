@@ -22,6 +22,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Defect_Prediction.py" />
+    <Compile Include="io\csv_data.py" />
     <Compile Include="io\test_data.py">
       <SubType>Code</SubType>
     </Compile>

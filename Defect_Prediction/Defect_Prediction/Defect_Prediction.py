@@ -25,13 +25,20 @@ def create_loggers():
     logger.addHandler(ch)
 
 create_loggers()
-parser = argparse.ArgumentParser()
-parser.add_argument('-p', '--path', help='Path for test images', required=False, default='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.7.0-src/apache-ant-1.7.0/src/main')
-args = parser.parse_args()
-test_data_path = args.path
 
-test = TestData(test_data_path)
-test.initialize()
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--sourcepath', help='Root path for the source files.', required=False, default='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.7.0-src/apache-ant-1.7.0/src/main')
+parser.add_argument('-b', '--bugdatapath', help='Path to the csv bug data sheet.', required=False, default='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.7.csv')
+parser.add_argument('-im', '--buginfomapping', help='Row index of the class info inside the bug info csv.', required=False, default=2)
+parser.add_argument('-bn', '--bugnumbermapping', help='Row index of the number_of_bugs inside the bug info csv.', required=False, default=23)
+
+args = parser.parse_args()
+test_data_path = args.sourcepath
+bugdatapath = args.bugdatapath
+
+
+test = TestData(test_data_path, bugdatapath)
+test.initialize(args.buginfomapping, args.bugnumbermapping)
 
 
 
