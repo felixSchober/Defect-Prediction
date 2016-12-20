@@ -128,7 +128,8 @@ class TestData(object):
         logger.debug('Loaded test data. test_X shape: {0} - test_Y shape: {1} - Number of custom tokens: {2}'.format(self.test_data_X.shape, self.test_data_Y.shape, len(self.token_mapping_names)))
 
 
-    def get_test_train_split(self, test_size=0.2, random_state=0):
+    def get_test_train_split(self, test_size=0.2, random_state=42):
+        logger.debug('Generating train/test split with test_size {0} and random_state {1}'.format(test_size, random_state))
         X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size, random_state)
         return X_train, X_test, y_train, y_test
 
