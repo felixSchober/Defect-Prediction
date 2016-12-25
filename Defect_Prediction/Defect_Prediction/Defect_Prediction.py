@@ -37,18 +37,20 @@ parser.add_argument('-st', '--savetestdata', help='Save test data or not.', acti
 args = parser.parse_args()
 test_data_path = args.sourcepath
 bug_data_path = args.bugdatapath
+load_test_data = args.loadtestdata
 
 #test_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/test'
 #bug_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/ant-1.7.csv'
-loadtestdata = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
+#load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
 
 
 test = TestData(test_data_path, bug_data_path)
 
-if loadtestdata is None:
+if load_test_data is None:
     test.initialize(args.buginfomapping, args.bugnumbermapping)
 else:
-    test.load_features(loadtestdata)
+    test.load_features(load_test_data)
+
 if args.savetestdata:
     test.save_features('C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/')
 

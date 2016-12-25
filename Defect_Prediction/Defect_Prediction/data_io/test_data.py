@@ -1,6 +1,6 @@
 from os import walk, remove
 import os.path as osPath
-import cPickle
+import pickle
 import logging
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -112,7 +112,7 @@ class TestData(object):
         pickle_this = (self.test_data_X, self.test_data_Y, self.token_mapping_names)
 
         with open(file_name, 'wb') as f: 
-            cPickle.dump(pickle_this, f)
+            pickle.dump(pickle_this, f)
 
     def load_features(self, path, name='feature_vector.pickle'):
         if not path.endswith('/'):
@@ -121,16 +121,19 @@ class TestData(object):
         logger.debug('Loading test data from file {0}.'.format(file_name))
 
         with open(file_name, 'r') as f:
-            unpickle_this = cPickle.load(f)
+            unpickle_this = pickle.load(f)
         self.test_data_X = unpickle_this[0]
         self.test_data_Y = unpickle_this[1]
         self.token_mapping_names = unpickle_this[2]
         logger.debug('Loaded test data. test_X shape: {0} - test_Y shape: {1} - Number of custom tokens: {2}'.format(self.test_data_X.shape, self.test_data_Y.shape, len(self.token_mapping_names)))
 
 
-    def get_test_train_split(self, test_size=0.2, random_state=42):
-        logger.debug('Generating train/test split with test_size {0} and random_state {1}'.format(test_size, random_state))
-        X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size, random_state)
+    def get_test_train_split(self, test_ratio=0.2, random_seed=42):
+        logger.debug('Generating train/test split with test_size {0} and random_state {1}'.format(test_ratio, random_seed))
+        X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size=test_ratio, random_state=random_seed)
+        logger.debug('Testset Split:')
+        logger.debug('\tTrain Shape: {0} - {1}'.format(X_train.shape, y_train.shape))
+        logger.debug('\tTest Shape: {0} - {1}'.format(X_test.shape, y_test.shape))
         return X_train, X_test, y_train, y_test
 
         
@@ -138,16 +141,16 @@ class TestData(object):
         # search for source files in current path
         source_files = []
         try:
-            _, _, source_files = walk(current_path).next()
+            _, _, source_files = walk(current_path).__next__()
         except:
-            logger.exception('\tCould not iterate through folder {0}.'.format(self.get_root_path() + className))
+            logger.exception('\tCould not iterate through folder {0}.'.format(current_path))
 
         # filter by extension.
         source_files = [ file for file in source_files if file.endswith(self.source_files_extension)]
 
         # found some files (add them to the source_files dict)
         if len(source_files) > 0:
-            print '\n'
+            print ('\n')
             logger.debug('\tFound {0} source files in {1}:'.format(len(source_files), current_index))
             for f in source_files:                
                 # remove extension for index
@@ -249,7 +252,7 @@ class TestData(object):
         1. Convert to numpy array
         2. Filter every token if occurence is less than 3
         3. TODO: Apply CLNI (if needed)
-        4. Normalize
+        4. Normalize X and y
         """
         
         logger.debug('Prepare test data for classification.')
@@ -264,7 +267,7 @@ class TestData(object):
         filter = []
         # iterate over the test data and filter out. 
         # Note: this could also be done in a list comprehension but this is much easier to read.
-        for i in xrange(len(tokens)):
+        for i in range(len(tokens)):
             if not i in token_dict or token_dict[i] < rare_token_number:
                 filter.append(i)
 
@@ -292,13 +295,5 @@ class TestData(object):
 
         # min-max normalization to range [0, 1]
         self.test_data_X /= (np.max(self.test_data_X) - np.min(self.test_data_X))
+        self.test_data_Y /= (np.max(self.test_data_Y) - np.min(self.test_data_Y))
         logger.debug('Size of test_data_X after data prep: {0}'.format(self.test_data_X.nbytes))
-
-
-
-
-
-
-
-
-             

@@ -33,7 +33,7 @@ def get_uuid():
 
     x = uuid.uuid1()
     return str(x)
-
+ 
 def get_parent_dir(path):
     """ Get the parent directory of a given path."""
 
@@ -296,7 +296,7 @@ def save_plt_figure(figure, name, path=None):
         path += name + ".png"
         figure.savefig(path)
         return path
-    except Exception, e:
+    except Exception as e:
         logging.exception("Could not save figure in {0}.".format(path))
 
 def is_image_black(image, whitePixelThreshold=50, imageSum=None):
@@ -342,172 +342,8 @@ def get_table(header, floatPercission=4, *rows):
         table.add_row(row)
     return table
 
-def menue (title, options, showExit=False, showBackToMain=True):
-    """
-    Displays a menu.
-
-    Keyword arguments:
-    title -- Title of the menu
-    options -- list of possible options to choose from
-    showExit -- show exit to exit program
-    showBackToMain -- show option to go back to main menu
-    """
-
-    print "\n",title
-
-    if showBackToMain:
-        options.append("Back")
-    if showExit:
-        options.append("Exit program")
-
-    optionCounter = 1
-    for option in options:
-        print "[{0}] {1}".format(optionCounter, option)
-        optionCounter += 1
-
-    print "------------------------------"
-    input = raw_input("Select option: ")
-    print ("\n\n")
-    
-    invalidInputString = "Invalid Input. Please enter a number from 1 to {0}.".format(len(options))
-    # convert input to int
-    try:
-        input = int(input)
-    except:
-        print invalidInputString
-        return menue(title, options, False, False)
-    
-    if input > 0 and input <= len(options):
-        return input
-    else:
-        print invalidInputString
-        return menue(title, options, False, False)     
-
-def radio_question(title, name, current, options, results, hint=None):
-    """ Displays a question with one possible answer.
-
-    Keyword arguments:
-    title -- Question type
-    name -- Question to ask
-    current -- current value
-    options -- list of possible options
-    results -- list of real values for results
-    hint -- additional string to display hints.
-    """
-
-    print "\n{0} {1}".format(title, name)
-    if hint is not None:
-        print hint
-    optionCounter = 1
-    for option in options:
-        if results[optionCounter-1] == current:
-            print "-> [{0}] {1} <-".format(optionCounter, option)
-        else:
-            print "   [{0}] {1}   ".format(optionCounter, option)
-        optionCounter += 1
-
-    print "------------------------------"
-    input = raw_input("Select option: ")
-    print ("\n\n")
-
-    invalidInputString = "Invalid Input. Please enter a number from 1 to {0}.".format(len(options))
-    # convert input to int
-    try:
-        input = int(input)
-    except:
-        print invalidInputString
-        return radio_question(title, name, current, options, results)
-    if input > 0 and input <= len(options):
-        return results[input-1]
-    else:
-        print invalidInputString
-        return radio_question(title, name, current, options, results)
-    
-def radio_setting(name, current, options, results, hint=None):
-    """ Displays a question with one possible answer and the title SETTING set.
-
-    Keyword arguments:
-    name -- Question to ask
-    current -- current value
-    options -- list of possible options
-    results -- list of real values for results
-    hint -- additional string to display hints.
-    """
-
-    return radio_question("SETTING", name, current, options, results, hint)
-
-def value_question(title, name, type, hint=None, blankValid=False, hideInput=False):
-    """ 
-    Displays a free value question.
-
-    Keyword arguments:
-    title -- Question type
-    name -- Question to ask
-    type -- data type of answer. s := string, i := integer, f := float    
-    hint -- additional string to display hints.
-    blankValid -- is the answer optional
-    hideInput -- hide input (for passwords)
-    """
 
 
-    print "\n{0} {1}".format(title, name)
-    if hint is not None:
-        print hint
-    input = ""
-    if hideInput:
-        input = read_password("Value ({0}): ".format(get_type_name(type)))
-    else:
-        input = raw_input("Value ({0}): ".format(get_type_name(type)))
-    if not blankValid and input == "":
-        print "Please enter a value ({0})".format(get_type_name(type))
-        return value_question(title, name, type, hint, blankValid, hideInput)
-
-    # convert to desired type
-    answer = None
-    try:
-        if type == "s":
-            answer = input
-        elif type == "i":
-            answer = int(input)
-        elif type == "f":
-            answer = float(input)
-    except:
-        print "Invalid Input. Please enter a",get_type_name(type)
-        return value_question(title, name, type, hint, blankValid, hideInput)
-    return answer
-
-def read_password(prompt=""):
-    """ Reads a hidden input."""
-
-    if sys.stdin.isatty():
-        return getpass.getpass(prompt)
-    print prompt
-    return sys.stdin.readline().rstrip()
-
-def value_setting(name, type, hint=None, blankValid=False, hideInput=False):
-    """ 
-    Displays a free value question and the title SETTING set.
-
-    Keyword arguments:    
-    name -- Question to ask
-    type -- data type of answer. s := string, i := integer, f := float    
-    hint -- additional string to display hints.
-    blankValid -- is the answer optional
-    hideInput -- hide input (for passwords)
-    """
-
-    return value_question("[SETTING]", name, type, hint, blankValid, hideInput)           
-
-def get_type_name(type):
-    """ Get type name for value_question."""
-    if type == "s":
-        return "string"
-    elif type == "i":
-        return "integer"
-    elif type == "f":
-        return "float"
-    else:
-        return "?"
 
 def annotate_points(ax, A, B):
     """ Annotate diagram points."""
@@ -563,7 +399,7 @@ def flip_image(image, direction):
 def equalize_image_channel(channel):
     """ Histogram equalization of a single image channel."""
 
-    if channel[0][0].shape == (3L,):
+    if channel[0][0].shape == (3):
         raise AttributeError("More than one color channel.")
     return cv.equalizeHist(channel)
 
@@ -596,7 +432,7 @@ def equalize_BGR_image_adaptive(image):
 
 def equalize_image_channel_adaptive(channel):
     """ Adaptive image channel equalization (CLAHE)."""
-    if channel[0][0].shape == (3L,):
+    if channel[0][0].shape == (3):
         raise AttributeError("More than one color channel.")
     clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     return clahe.apply(channel)
@@ -613,9 +449,9 @@ def change_light(image, value, channel="v"):
     reshape = False
     prevShape = image.shape
     
-    if image.shape[0] == 3L or image.shape[0] == 1L:
+    if image.shape[0] == 3 or image.shape[0] == 1:
         reshape = True
-        if image.shape[0] == image.shape[1] or (image.shape[0] == 1L and image.shape[1] == 3L): # grayscale 1L, 1L, h, w OR color 1L, 3L, h, w
+        if image.shape[0] == image.shape[1] or (image.shape[0] == 1 and image.shape[1] == 3): # grayscale 1L, 1L, h, w OR color 1L, 3L, h, w
             reshapeVector = (image.shape[2], image.shape[3], image.shape[1])         
         else:                      
             reshapeVector = (image.shape[1], image.shape[2], image.shape[0])                    # single row color or grayscale 1L/3L, h, w
@@ -689,13 +525,13 @@ def reshape_to_cv_format(image, rescale=False):
     reshape = False
     if rescale:
         image = rescale_image_0255(image)
-    if image.shape[0] == 3L or image.shape[0] == 1L:
+    if image.shape[0] == 3 or image.shape[0] == 1:
         reshape = True
-        if image.shape[0] == 1L and image.shape[1] == 3L: # color 1L, 3L, h, w
+        if image.shape[0] == 1 and image.shape[1] == 3: # color 1L, 3L, h, w
             reshapeVector = (image.shape[2], image.shape[3], image.shape[1])         
-        elif image.shape[0] == 3L: # single row color 3L, h, w                      
+        elif image.shape[0] == 3: # single row color 3L, h, w                      
             reshapeVector = (image.shape[1], image.shape[2], image.shape[0])                    
-        elif image.shape[0] == 1L and image.shape[1] == 1L: # grayscale 1L, 1L, h, w                         
+        elif image.shape[0] == 1 and image.shape[1] == 1: # grayscale 1L, 1L, h, w                         
             reshapeVector = (image.shape[2], image.shape[3])
         else: # single row grayscale 1L, h, w
             reshapeVector = (image.shape[1], image.shape[2])
@@ -815,9 +651,9 @@ def translate_image(image, translationMatrix):
     # which image shape? (ConvNet (3, w, h) vs. Normal (w, h, 3)
     reshape = False
     prevShape = image.shape
-    if image.shape[0] == 3L or image.shape[0] == 1L:
+    if image.shape[0] == 3 or image.shape[0] == 1:
         reshape = True
-        if image.shape[0] == image.shape[1] or (image.shape[0] == 1L and image.shape[1] == 3L): # grayscale 1L, 1L, h, w OR color 1L, 3L, h, w
+        if image.shape[0] == image.shape[1] or (image.shape[0] == 1 and image.shape[1] == 3): # grayscale 1L, 1L, h, w OR color 1L, 3L, h, w
             reshapeVector = (image.shape[2], image.shape[3], image.shape[1])         
         else:                      
             reshapeVector = (image.shape[1], image.shape[2], image.shape[0])                    # single row color or grayscale 1L/3L, h, w
