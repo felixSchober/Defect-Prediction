@@ -34,6 +34,9 @@
     <Compile Include="misc\__init__.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="prediction\tf_model.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="prediction\__init__.py">
       <SubType>Code</SubType>
     </Compile>

@@ -1,15 +1,19 @@
 import argparse
-from data_io.test_data import TestData
 import logging
+from data_io.test_data import DefectDataSetLoader, DataSet
+from prediction.tf_model import TensorFlowNet
 
 
 def create_loggers():
     # setup logging
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filename='run.log', filemode='w', level=logging.DEBUG)
 
-    # create logger
-    logger = logging.getLogger('io')
-    logger.setLevel(logging.DEBUG)
+    # create loggers
+    logger_io = logging.getLogger('io')
+    logger_io.setLevel(logging.DEBUG)
+
+    logger_prediction = logging.getLogger('prediction')
+    logger_prediction.setLevel(logging.DEBUG)
 
     # create console handler and set level to debug
     ch = logging.StreamHandler()
@@ -22,7 +26,8 @@ def create_loggers():
     ch.setFormatter(formatter)
 
     # add ch to logger
-    logger.addHandler(ch)
+    logger_io.addHandler(ch)
+    logger_prediction.addHandler(ch)
 
 create_loggers()
 
@@ -38,21 +43,31 @@ args = parser.parse_args()
 test_data_path = args.sourcepath
 bug_data_path = args.bugdatapath
 load_test_data = args.loadtestdata
-
+save_data_set = args.savetestdata
+save_data_set = True
 #test_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/test'
 #bug_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/ant-1.7.csv'
-#load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
+load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
 
 
-test = TestData(test_data_path, bug_data_path)
+data_set_loader = DefectDataSetLoader(test_data_path, bug_data_path, source_files_extension='.java', one_hot=False)
 
 if load_test_data is None:
-    test.initialize(args.buginfomapping, args.bugnumbermapping)
+    data_set_loader.initialize(args.buginfomapping, args.bugnumbermapping)
 else:
-    test.load_features(load_test_data)
+    data_set_loader.load_features(load_test_data)
 
-if args.savetestdata:
-    test.save_features('C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/')
+if save_data_set:
+    data_set_loader.save_features('C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/')
 
-a = test.get_test_train_split()
+X_train, X_test, y_train, y_test = data_set_loader.get_test_train_split()
+
+# create test sets
+train = DataSet(X_train, y_train, 'Train', one_hot=False, num_classes=data_set_loader.num_classes)
+test = DataSet(X_test, y_test, 'Test', one_hot=False, num_classes=data_set_loader.num_classes)
+
+net = TensorFlowNet(train, test, data_set_loader.num_classes, 50, 0.01)
+net.run_training()
+
+
 
