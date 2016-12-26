@@ -4,6 +4,7 @@ import pickle
 import logging
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelBinarizer
 import javalang
 from data_io.csv_data import get_csv_row_generator
 from misc import utils
@@ -11,10 +12,33 @@ from misc import utils
 
 logger = logging.getLogger('io')
 
-class TestData(object):
+
+def to_one_hot(y):
+    """Transform multi-class labels to binary labels
+        The output of to_one_hot is sometimes referred to by some authors as the
+        1-of-K coding scheme.
+        Parameters
+        ----------
+        y : numpy array or sparse matrix of shape (n_samples,) or
+            (n_samples, n_classes) Target values. The 2-d matrix should only
+            contain 0 and 1, represents multilabel classification. Sparse
+            matrix can be CSR, CSC, COO, DOK, or LIL.
+        Returns
+        -------
+        Y : numpy array or CSR matrix of shape [n_samples, n_classes]
+            Shape will be [n_samples, 1] for binary problems.
+        classes_ : class vector extraceted from y.
+        """
+    lb = LabelBinarizer()
+    lb.fit(y)
+    Y = lb.transform(y)
+    return (Y, lb.classes_)
+        
+
+class DefectDataSetLoader(object):
     """description of class"""
 
-    def __init__(self, source_root_path, bug_data_path, source_files_extension=('.java')):
+    def __init__(self, source_root_path, bug_data_path, source_files_extension=('.java'), one_hot=True):
         # root path of the java project and location of the bug data sheet
         self.__root_path = source_root_path
         self.__bug_data_path = bug_data_path
@@ -35,6 +59,9 @@ class TestData(object):
 
         self.test_data_X = []
         self.test_data_Y = []
+        self.one_hot = one_hot
+        self.num_classes = -1
+        self.class_vector = []
 
         self.token_mapping = {
             'MethodDeclaration': 1,
@@ -58,6 +85,7 @@ class TestData(object):
 
         self.source_files_extension = source_files_extension
 
+        
     def initialize(self, class_info_mapping, number_of_bugs_mapping):
 
         logger.debug('Initializing source data set with path {0}.'.format(self.__root_path))
@@ -94,12 +122,26 @@ class TestData(object):
         self.__map_bug_data()
         logger.debug('Finished mapping.')
 
+        # set number of samples
+        self.__num_examples = len(self.test_data)
+
         # create abstract syntax trees for every file
         self.__create_ast_vectors()
 
-        # filter rare tokens
+        # filter rare tokens and prepare data for use
         self.__prepare_data()
+
+        self.num_classes = self.__get_num_classes()
+
         logger.debug('Finished data initialization.')
+
+
+    def __get_num_classes(self):
+        if self.one_hot:
+            return self.test_data_Y.shape[1]
+        
+        return np.max(self.test_data_Y) + 1
+        #return len(np.unique(self.test_data_Y))
 
 
     def save_features(self, path, name='feature_vector.pickle'):
@@ -109,10 +151,10 @@ class TestData(object):
         file_name = path + name 
         logger.debug('Saving test data to file {0}.'.format(file_name))
 
-        pickle_this = (self.test_data_X, self.test_data_Y, self.token_mapping_names)
+        pickle_this = (self.test_data_X, self.test_data_Y, self.token_mapping_names, self.class_vector, self.one_hot)
 
         with open(file_name, 'wb') as f: 
-            pickle.dump(pickle_this, f)
+            pickle.dump(pickle_this, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load_features(self, path, name='feature_vector.pickle'):
         if not path.endswith('/'):
@@ -120,11 +162,16 @@ class TestData(object):
         file_name = path + name
         logger.debug('Loading test data from file {0}.'.format(file_name))
 
-        with open(file_name, 'r') as f:
+        with open(file_name, 'rb') as f:
             unpickle_this = pickle.load(f)
         self.test_data_X = unpickle_this[0]
         self.test_data_Y = unpickle_this[1]
         self.token_mapping_names = unpickle_this[2]
+        self.class_vector = unpickle_this[3]
+        self.one_hot = unpickle_this[4]
+                
+        self.num_classes = self.__get_num_classes()
+
         logger.debug('Loaded test data. test_X shape: {0} - test_Y shape: {1} - Number of custom tokens: {2}'.format(self.test_data_X.shape, self.test_data_Y.shape, len(self.token_mapping_names)))
 
 
@@ -135,7 +182,6 @@ class TestData(object):
         logger.debug('\tTrain Shape: {0} - {1}'.format(X_train.shape, y_train.shape))
         logger.debug('\tTest Shape: {0} - {1}'.format(X_test.shape, y_test.shape))
         return X_train, X_test, y_train, y_test
-
         
     def __find_files_recursively(self, current_path, current_index):
         # search for source files in current path
@@ -247,6 +293,7 @@ class TestData(object):
                 feature_vector.append(self.token_mapping[str(node)])
         return feature_vector
 
+
     def __prepare_data(self, rare_token_number=3):
         """
         1. Convert to numpy array
@@ -258,7 +305,7 @@ class TestData(object):
         logger.debug('Prepare test data for classification.')
         # convert to numpy array
         self.test_data_X = np.array(self.test_data_X)
-        self.test_data_Y = np.array(self.test_data_Y)
+        self.test_data_Y = np.array(self.test_data_Y, dtype=np.int32)
 
         # filter rare tokens
         flattened_feature_vector = [item for sublist in self.test_data_X for item in sublist]
@@ -293,7 +340,78 @@ class TestData(object):
 
         self.test_data_X = np.array(filtered_padded_test_data_X, dtype=np.float32)
 
+
         # min-max normalization to range [0, 1]
         self.test_data_X /= (np.max(self.test_data_X) - np.min(self.test_data_X))
-        self.test_data_Y /= (np.max(self.test_data_Y) - np.min(self.test_data_Y))
         logger.debug('Size of test_data_X after data prep: {0}'.format(self.test_data_X.nbytes))
+
+        if self.one_hot:
+            self.test_data_Y, self.class_vector = to_one_hot(self.test_data_Y)
+            logger.debug('Converted Y data to one hot matrix. Classes: {0}'.format(self.class_vector))
+
+
+from sklearn.utils import shuffle
+
+class DataSet(object):
+
+    def __init__(self, 
+                 features,
+                 targets,
+                 name,
+                 one_hot,
+                 num_classes):
+
+        self.__X = features
+        self.__y = targets
+
+        self.__epochs_completed = 0
+        self.__index_in_epoch = 0
+
+        # will be set in initialize 
+        self.__num_examples = targets.shape[0]
+
+        self.one_hot = one_hot
+        self.__num_classes = num_classes
+        
+
+    @property
+    def features(self):
+        return self.__X
+
+    @property
+    def feature_shape(self):
+        return self.__X.shape
+
+    @property
+    def targets(self):
+        return self.__y
+
+    @property
+    def num_examples(self):
+        return self.__num_examples
+
+    @property
+    def num_classes(self):
+        return self.__num_classes
+
+    @property
+    def epochs_completed(self):
+        return self.__epochs_completed
+
+    def next_batch(self, batch_size):
+        start = self.__index_in_epoch
+        self.__index_in_epoch += batch_size
+
+        # Current epoch is finished (used all examples)
+        if self.__index_in_epoch > self.__num_examples:
+            self.__epochs_completed += 1
+
+            # reshuffle data for next epoch
+            self.__X, self.__y = shuffle(self.__X, self.__y)
+            start = 0
+            self.__index_in_epoch = batch_size
+
+            # make sure batch size is smaller than the actual number of examples
+            assert batch_size <= self.__num_examples
+        end = self.__index_in_epoch
+        return self.__X[start:end], self.__y[start:end]
