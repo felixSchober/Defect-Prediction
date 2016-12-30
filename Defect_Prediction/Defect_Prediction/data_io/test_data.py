@@ -33,29 +33,95 @@ def to_one_hot(y):
     lb.fit(y)
     Y = lb.transform(y)
     return (Y, lb.classes_)
+
+def find_files_recursively(current_path, current_index, source_file_dict={}, file_extension='.java'):
+        # search for source files in current path
+        source_files = []
+        try:
+            _, _, source_files = walk(current_path).__next__()
+        except:
+            logger.exception('\tCould not iterate through folder {0}.'.format(current_path))
+
+        # filter by extension.
+        source_files = [ file for file in source_files if file.endswith(file_extension)]
+
+        # found some files (add them to the source_files dict)
+        if len(source_files) > 0:
+            print ('\n')
+            logger.debug('\tFound {0} source files in {1}:'.format(len(source_files), current_index))
+            for f in source_files:                
+                # remove extension for index
+                fi = f[:-len(file_extension)]
+                source_file_dict[current_index + '.' + fi] = current_path + '/' + f
+                logger.debug('\t\t- {0}.{1}'.format(current_index, fi))
+
+        # search for new folders
+        folder_list = []
+        try:
+            folder_list = next(walk(current_path))[1]
+        except:
+            logger.exception('\tCould not iterate through root folder of dataset. - Path: {0}.'.format(current_path))
+
+        for folder in folder_list:
+            source_file_dict = find_files_recursively(current_path + folder + '/', current_index + '.' + folder, source_file_dict, file_extension)
+        return source_file_dict
+
+def load_bug_data(bug_data_path, class_info_mapping, number_of_bugs_mapping):
+    logger.debug('Initializing bug data set with parameters {0} - {1}'.format(class_info_mapping, number_of_bugs_mapping))
+    if not bug_data_path.endswith('.csv'):
+        raise AttributeError('Only .csv files are supported.')
         
+    # iterate over entries and add them to the __bug_data list
+    # skip the first row (contains only title)
+    bug_data_dict = {}
+    for entry in get_csv_row_generator(bug_data_path, delimiter=',', skip_first_row=True):
+        logger.debug('\tBugs: {1} \t-> Class: {0}'.format(entry[class_info_mapping], entry[number_of_bugs_mapping]))
+        bug_data_dict[entry[class_info_mapping]] = entry[number_of_bugs_mapping]
+    return bug_data_dict
+        
+def map_bug_data(source_files, bug_data):
+        logger.debug('Mapping bug data and source files together.')
+        test_data = []
+        for class_info, number_of_bugs in bug_data.items():
+            if not class_info in source_files:
+                logger.error('Could not find match for bug data file {0}.'.format(class_info))
+                continue
+            test_data.append((class_info, source_files[class_info], number_of_bugs))
+        return test_data
 
 class DefectDataSetLoader(object):
     """description of class"""
 
-    def __init__(self, source_root_path, bug_data_path, source_files_extension=('.java'), one_hot=True):
+    def __init__(self, source_root_path_list=[], bug_data_path_list=[], source_files_extension=('.java'), one_hot=True):
+        
+        if len(source_root_path_list) == 0 or len(bug_data_path_list) == 0 or len(source_root_path_list) != len(bug_data_path_list):
+            raise AttributeError('Parameter source_root_path_list or bug_data_path_list are either empty or do not contain the same number of dirs.')
+
+        self.num_projects = len(source_root_path_list)
+
         # root path of the java project and location of the bug data sheet
-        self.__root_path = source_root_path
-        self.__bug_data_path = bug_data_path
+        self.__root_path_list = source_root_path_list
+        self.__bug_data_path_list = bug_data_path_list
 
         # dict which contains the path (value) of a single file /class
         # and the package info (e.g. org.apache.tools.ant.taskdefs.rmic.RmicAdapterFactory)
         # as the index.
-        self.__source_files = {}
+        self.__source_files = [{} for _ in range(self.num_projects)]
 
         # dict which contains the number of bugs of a single file / class
         # and the package info (e.g. org.apache.tools.ant.taskdefs.rmic.RmicAdapterFactory)
         # as the index. 
-        self.__bug_data = {}
+        self.__bug_data = [{} for _ in range(self.num_projects)]
 
-        # list: [(class_info, path_to_class_file, number_of_bugs)]
+        # list: [project_test_data]
+        # project_test_data: [(class_info, path_to_class_file, number_of_bugs)]
         # class_info: (package info) (e.g. org.apache.tools.ant.taskdefs.rmic.RmicAdapterFactory) 
-        self.test_data = []
+        self.test_data = [[] for _ in range(self.num_projects)]
+
+        # list that stores the start and end indices for each project for the data set feature vectors.
+        # for example: [(0, 500), ...] would mean that features from index 0 to 500 belong to project 0 and features from 501 to X belong to another project.
+        # list of tuples. [(start_index, end_index)]
+        self.test_data_project_indices = []
 
         self.test_data_X = []
         self.test_data_Y = []
@@ -88,45 +154,51 @@ class DefectDataSetLoader(object):
         
     def initialize(self, class_info_mapping, number_of_bugs_mapping):
 
-        logger.debug('Initializing source data set with path {0}.'.format(self.__root_path))
+        logger.debug('Initializing {0} source data set(s) with path(s) {1}.'.format(self.num_projects, self.__root_path_list))
 
-        # append '/' at the end if it does not exist.
-        if not self.__root_path.endswith('/'):
-            self.__root_path += '/'
+        for i in range(self.num_projects):
+            print('-- Project {0} --'.format(i))
+            logger.debug('Initializing project {0}.'.format(i))
+            project_source_path = self.__root_path_list[i]
+            project_bug_path = self.__bug_data_path_list[i]
 
-        # iterate over root path and add all files to the source_files dict
-        folder_list = []
-        try:
-            folder_list = next(walk(self.__root_path))[1]
-        except:
-            logger.exception('\tCould not iterate through root folder of dataset. - Path: {0}.'.format(self.__root_path))
+            # append '/' at the end if it does not exist.
+            if not project_source_path.endswith('/'):
+                project_source_path += '/'
 
-        if len(folder_list) == 0:
-            logger.error('Could not locate project root on path {0}. There were no folders inside the directory.'.format(self.__root_path))
-            return None
-        elif len(folder_list) > 1:
-            logger.error('Could not locate project root on path {0}. There were more than one folder in the directory.\n\t\tExpected something like this [org]\n\t\tGot {2}.'.format(self.__root_path, folder_list))
-            return None
+            # iterate over root path and add all files to the source_files dict
+            folder_list = []
+            try:
+                folder_list = next(walk(project_source_path))[1]
+            except:
+                logger.exception('\tCould not iterate through root folder of dataset. - Path: {0}.'.format(project_source_path))
+
+            if len(folder_list) == 0:
+                logger.error('Could not locate project root on path {0}. There were no folders inside the directory.'.format(project_source_path))
+                return None
+            elif len(folder_list) > 1:
+                logger.error('Could not locate project root on path {0}. There were more than one folder in the directory.\n\t\tExpected something like this [org]\n\t\tGot {2}.'.format(project_source_path, folder_list))
+                return None
         
-        logger.debug('\tFound project root {0}.'.format(folder_list[0]))
+            logger.debug('\tFound project root {0}.'.format(folder_list[0]))
 
-        # go over source dir and index source files
-        self.__find_files_recursively(self.__root_path + folder_list[0] + '/', folder_list[0])
-        logger.debug('Finished indexing of source folder. Found {0} files.'.format(len(self.__source_files)))
+            # go over source dir and index source files
+            self.__source_files[i] = find_files_recursively(project_source_path + folder_list[0] + '/', folder_list[0], source_file_dict={}, file_extension=self.source_files_extension)
+            logger.debug('Finished indexing of source folder for project {0} ({1}). Found {2} files.'.format(i, project_source_path, len(self.__source_files[i])))
 
-        # iterate over bug data
-        self.__load_bug_data(class_info_mapping, number_of_bugs_mapping)
-        logger.debug('Finished indexing of bug data. Found data for {0} classes.'.format(len(self.__bug_data)))
+            # iterate over bug data
+            self.__bug_data[i] = load_bug_data(project_bug_path, class_info_mapping, number_of_bugs_mapping)
+            logger.debug('Finished indexing of bug data for project {0} ({1}). Found data for {2} classes.'.format(i, project_bug_path, len(self.__bug_data[i])))
 
-        # map bug data 
-        self.__map_bug_data()
-        logger.debug('Finished mapping.')
-
-        # set number of samples
-        self.__num_examples = len(self.test_data)
+            # map bug data 
+            self.test_data[i] = map_bug_data(self.__source_files[i], self.__bug_data[i])
+            logger.debug('Finished mapping project {0}.'.format(i))
 
         # create abstract syntax trees for every file
         self.__create_ast_vectors()
+
+        # set number of samples
+        self.__num_examples = len(self.test_data_X)
 
         # filter rare tokens and prepare data for use
         self.__prepare_data()
@@ -135,7 +207,7 @@ class DefectDataSetLoader(object):
 
         logger.debug('Finished data initialization.')
 
-
+        
     def __get_num_classes(self):
         if self.one_hot:
             return self.test_data_Y.shape[1]
@@ -151,7 +223,7 @@ class DefectDataSetLoader(object):
         file_name = path + name 
         logger.debug('Saving test data to file {0}.'.format(file_name))
 
-        pickle_this = (self.test_data_X, self.test_data_Y, self.token_mapping_names, self.class_vector, self.one_hot)
+        pickle_this = (self.test_data_X, self.test_data_Y, self.token_mapping_names, self.class_vector, self.one_hot, self.test_data_project_indices)
 
         with open(file_name, 'wb') as f: 
             pickle.dump(pickle_this, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -169,6 +241,7 @@ class DefectDataSetLoader(object):
         self.token_mapping_names = unpickle_this[2]
         self.class_vector = unpickle_this[3]
         self.one_hot = unpickle_this[4]
+        self.test_data_project_indices = unpickle_this[5]
                 
         self.num_classes = self.__get_num_classes()
 
@@ -182,84 +255,71 @@ class DefectDataSetLoader(object):
         logger.debug('\tTrain Shape: {0} - {1}'.format(X_train.shape, y_train.shape))
         logger.debug('\tTest Shape: {0} - {1}'.format(X_test.shape, y_test.shape))
         return X_train, X_test, y_train, y_test
-        
-    def __find_files_recursively(self, current_path, current_index):
-        # search for source files in current path
-        source_files = []
-        try:
-            _, _, source_files = walk(current_path).__next__()
-        except:
-            logger.exception('\tCould not iterate through folder {0}.'.format(current_path))
 
-        # filter by extension.
-        source_files = [ file for file in source_files if file.endswith(self.source_files_extension)]
+    def get_project_split(self):
+        logger.debug('Splitting data set vector into projects.')
+        X = []
+        y = []
 
-        # found some files (add them to the source_files dict)
-        if len(source_files) > 0:
-            print ('\n')
-            logger.debug('\tFound {0} source files in {1}:'.format(len(source_files), current_index))
-            for f in source_files:                
-                # remove extension for index
-                fi = f[:-len(self.source_files_extension)]
-                self.__source_files[current_index + '.' + fi] = current_path + '/' + f
-                logger.debug('\t\t- {0}.{1}'.format(current_index, fi))
+        for project_index in range(len(self.test_data_project_indices)):
+            start = self.test_data_project_indices[project_index][0]
+            end = self.test_data_project_indices[project_index][1]
+            X.append(self.test_data_X[start:end])
+            y.append(self.test_data_Y[start:end])
+            logger.debug('\tProject {0} Shape: X: {1} - y: {2}'.format(project_index, X[project_index].shape, y[project_index].shape))
 
-        # search for new folders
-        folder_list = []
-        try:
-            folder_list = next(walk(current_path))[1]
-        except:
-            logger.exception('\tCould not iterate through root folder of dataset. - Path: {0}.'.format(self.__root_path))
+        return X, y
 
-        for folder in folder_list:
-            self.__find_files_recursively(current_path + folder + '/', current_index + '.' + folder)
-
-
-    def __load_bug_data(self, class_info_mapping, number_of_bugs_mapping):
-        logger.debug('Initializing bug data set with parameters {0} - {1}'.format(class_info_mapping, number_of_bugs_mapping))
-        if not self.__bug_data_path.endswith('.csv'):
-            raise AttributeError('Only .csv files are supported.')
-        
-        # iterate over entries and add them to the __bug_data list
-        # skip the first row (contains only title)
-        for entry in get_csv_row_generator(self.__bug_data_path, delimiter=';', skip_first_row=True):
-            logger.debug('\tBugs: {1} \t-> Class: {0}'.format(entry[class_info_mapping], entry[number_of_bugs_mapping]))
-            self.__bug_data[entry[class_info_mapping]] = entry[number_of_bugs_mapping]
-
-
-    def __map_bug_data(self):
-        logger.debug('Mapping bug data and source files.')
-        for class_info, number_of_bugs in self.__bug_data.items():
-            if not class_info in self.__source_files:
-                logger.error('Could not find match for bug data file {0}.'.format(class_info))
-                continue
-            self.test_data.append((class_info, self.__source_files[class_info], number_of_bugs))
-
-
+                     
     def __create_ast_vectors(self):
-        number_of_classes = len(self.test_data)
-        i = 0
-        logger.debug('Creating abstract syntax trees for {0} classes.'.format(number_of_classes))
-        for (class_info, path_to_class_file, number_of_bugs) in self.test_data:
-            # open file and read it
-            source_code = ''
-            with open(path_to_class_file, 'rb') as f:
-                source_code = f.read()
+        """
+        Creates abstract syntax trees for each class in each project.
+        Tokens will be reused throughout all projects.
+        """
+        # get the total number of classes for all projects
+        number_of_classes = sum([len(self.test_data[i]) for i in range(self.num_projects)])
+        current_data_set_index = 0
+        for project_index in range(self.num_projects):
+            project_test_data = self.test_data[project_index]
 
-            try:
-                tree = javalang.parse.parse(source_code)
-            except:
-                logger.exception('Could not parse sourcefile {0} (Path: {1}). (Syntax errors)'.format(class_info, path_to_class_file))
-                continue           
+            # start index for the test_data_X / Y which contains all features for every project.
+            start_index = current_data_set_index
 
-            # try to generate feature vector
-            tree_feature_vector = self.__convert_tree_to_feature_vector_unstructured(tree)
-            self.test_data_X.append(tree_feature_vector)
-            self.test_data_Y.append(number_of_bugs)
-            self.test_data[i] = (class_info, path_to_class_file, number_of_bugs, tree, tree_feature_vector)           
+            # counter for self.test_data index. This index starts at zero for each project because the projects are sep. in test_data.
+            project_test_data_index = 0
+            
+            logger.debug('Creating abstract syntax trees for project {0}. {1} classes.'.format(project_index, len(project_test_data)))
+            for (class_info, path_to_class_file, number_of_bugs) in project_test_data:
+                # open file and read it
+                source_code = ''
+                with open(path_to_class_file, 'rb') as f:
+                    source_code = f.read()
 
-            utils.show_progress(True, i+1, number_of_classes, 'AST creation for {0} classes.\tToken mappings: {1}:', number_of_classes, len(self.token_mapping_names))
-            i += 1
+                try:
+                    tree = javalang.parse.parse(source_code)
+                except:
+                    logger.exception('Could not parse sourcefile {0} (Path: {1}) (Project {2}). (Syntax errors)'.format(class_info, path_to_class_file, project_index))
+                    continue           
+
+                # try to generate feature vector
+                tree_feature_vector = self.__convert_tree_to_feature_vector_unstructured(tree)
+                self.test_data_X.append(tree_feature_vector)
+                self.test_data_Y.append(number_of_bugs)
+
+                # replace existing test_data entry tuples with additional info
+                self.test_data[project_index][project_test_data_index] = (class_info, path_to_class_file, number_of_bugs, tree, tree_feature_vector)           
+
+                project_test_data_index += 1
+                current_data_set_index += 1
+                utils.show_progress(True, current_data_set_index, number_of_classes, 'AST creation for {0} classes.\tToken mappings: {1}:', number_of_classes, len(self.token_mapping_names))
+            print('\n')
+            logger.debug('AST creation for project {0} done. Progress: {1:.2f}%'.format(project_index, ((current_data_set_index / number_of_classes) * 100)))
+
+            end_index = current_data_set_index - 1
+            logger.debug('Data set index interval for project {0}: {1} to {2}'.format(project_index, start_index, end_index))
+            self.test_data_project_indices.append((start_index, end_index))
+            print('')
+        print('\n**')
 
 
     def __convert_tree_to_feature_vector_unstructured(self, tree):
@@ -319,7 +379,7 @@ class DefectDataSetLoader(object):
                 filter.append(i)
 
         logger.debug('Tokens before filtering: {0}'.format(len(tokens)))
-        logger.debug('Filtered tokens: {0}'.format(len(filter)))
+        logger.debug('Filtered tokens: {0} -> Number of tokens after filtering: {1}'.format(len(filter), len(tokens) - len(filter)))
 
         # remove tokens from test_data feature vectors
         filtered_test_data_X = []
@@ -358,8 +418,7 @@ class DataSet(object):
                  features,
                  targets,
                  name,
-                 one_hot,
-                 num_classes):
+                 one_hot):
 
         self.__X = features
         self.__y = targets
@@ -371,7 +430,6 @@ class DataSet(object):
         self.__num_examples = targets.shape[0]
 
         self.one_hot = one_hot
-        self.__num_classes = num_classes
         
 
     @property
@@ -397,6 +455,19 @@ class DataSet(object):
     @property
     def epochs_completed(self):
         return self.__epochs_completed
+
+    @property
+    def most_frequent_class(self):
+        counts = np.bincount(self.__y)
+        return np.argmax(counts), np.max(counts)
+
+    @property
+    def zero_error(self):
+        # how many occurences has the most frequent class?
+        _, fc = self.most_frequent_class
+        return fc / self.__num_examples
+
+
 
     def next_batch(self, batch_size):
         start = self.__index_in_epoch

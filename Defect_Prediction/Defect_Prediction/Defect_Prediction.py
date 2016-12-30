@@ -45,28 +45,34 @@ bug_data_path = args.bugdatapath
 load_test_data = args.loadtestdata
 save_data_set = args.savetestdata
 save_data_set = True
-#test_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/test'
-#bug_data_path = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/test/ant-1.7.csv'
+
+
+test_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.6.0-src/src/main', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.7.0-src/apache-ant-1.7.0/src/main']
+bug_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.6.csv', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.7.csv']
 load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
 
 
 data_set_loader = DefectDataSetLoader(test_data_path, bug_data_path, source_files_extension='.java', one_hot=False)
 
 if load_test_data is None:
-    data_set_loader.initialize(args.buginfomapping, args.bugnumbermapping)
+    data_set_loader.initialize(args.buginfomapping, args.bugnumbermapping) 
 else:
     data_set_loader.load_features(load_test_data)
 
 if save_data_set:
     data_set_loader.save_features('C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/')
 
-X_train, X_test, y_train, y_test = data_set_loader.get_test_train_split()
-
+#X_train, X_test, y_train, y_test = data_set_loader.get_test_train_split()
 # create test sets
-train = DataSet(X_train, y_train, 'Train', one_hot=False, num_classes=data_set_loader.num_classes)
-test = DataSet(X_test, y_test, 'Test', one_hot=False, num_classes=data_set_loader.num_classes)
+#train = DataSet(X_train, y_train, 'Train', one_hot=False)
+#test = DataSet(X_test, y_test, 'Test', one_hot=False)
 
-net = TensorFlowNet(train, test, data_set_loader.num_classes, 50, 0.01)
+
+X, y = data_set_loader.get_project_split()
+train = DataSet(X[1], y[1], 'Train', one_hot=False)
+test = DataSet(X[0], y[0], 'Test', one_hot=False)
+
+net = TensorFlowNet(train, test, data_set_loader.num_classes, 50, 0.001, architecture_shape=(2048, 256))
 net.run_training()
 
 
