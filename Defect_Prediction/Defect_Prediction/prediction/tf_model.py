@@ -349,7 +349,7 @@ class TensorFlowNet(object):
         train_string = tr_l_color + '{0:.3f}\t\t'.format(train_loss) + tr_p_color + '{0:.3f}\t\t'.format(train_precission)
         test_string = te_l_color + '{0:.3f}\t\t'.format(test_loss) + te_p_color + '{0:.3f}\t\t'.format(test_precission)
 
-        print('{0}\t\t'.format(step/100) + train_string + test_string + utils.colored_shell_seq('WHITE') + '{0:.3f}'.format(duration))
+        print('{0}\t\t\t\t'.format(step/100) + train_string + test_string + utils.colored_shell_seq('WHITE') + '{0:.3f}'.format(duration))
               
 
 

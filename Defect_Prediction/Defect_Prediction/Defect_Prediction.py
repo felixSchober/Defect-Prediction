@@ -16,18 +16,22 @@ def create_loggers():
     logger_prediction.setLevel(logging.DEBUG)
 
     # create console handler and set level to debug
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
+    ch_pred = logging.StreamHandler()
+    ch_pred.setLevel(logging.INFO)
+
+    ch_io = logging.StreamHandler()
+    ch_io.setLevel(logging.DEBUG)
 
     # create formatter
     formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
 
     # add formatter to ch
-    ch.setFormatter(formatter)
+    ch_io.setFormatter(formatter)
+    ch_pred.setFormatter(formatter)
 
     # add ch to logger
-    logger_io.addHandler(ch)
-    logger_prediction.addHandler(ch)
+    logger_io.addHandler(ch_io)
+    logger_prediction.addHandler(ch_pred)
 
 create_loggers()
 
@@ -49,15 +53,15 @@ save_data_set = True
 
 test_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.6.0-src/src/main', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.7.0-src/apache-ant-1.7.0/src/main']
 bug_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.6.csv', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.7.csv']
-load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
+#load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
 
 
-data_set_loader = DefectDataSetLoader(test_data_path, bug_data_path, source_files_extension='.java', one_hot=False)
+data_set_loader = DefectDataSetLoader(test_data_path, bug_data_path, source_files_extension='.java', one_hot=False, binary_class_labels=True)
 
 if load_test_data is None:
     data_set_loader.initialize(args.buginfomapping, args.bugnumbermapping) 
 else:
-    data_set_loader.load_features(load_test_data)
+    data_set_loader.load_features(load_test_data, name='feature_vector_binary.pickle')
 
 if save_data_set:
     data_set_loader.save_features('C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/')
@@ -69,11 +73,26 @@ if save_data_set:
 
 
 X, y = data_set_loader.get_project_split()
-train = DataSet(X[1], y[1], 'Train', one_hot=False)
-test = DataSet(X[0], y[0], 'Test', one_hot=False)
+train = DataSet(X[0], y[0], 'Train', one_hot=False)
+test = DataSet(X[1], y[1], 'Test', one_hot=False)
 
-net = TensorFlowNet(train, test, data_set_loader.num_classes, 50, 0.001, architecture_shape=(2048, 256))
+net = TensorFlowNet(
+    train,
+    test, 
+    data_set_loader.num_classes, 
+    50, 
+    initial_learning_rate=0.01, 
+    architecture_shape=(64,16), 
+    log_dir='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/tf',
+    max_steps=20000
+    )
 net.run_training()
+num_prediction_tests = 10
+X, y = test.get_random_elements(num_prediction_tests)
+
+for i in range(num_prediction_tests):
+    y_hat, prob = net.predict(X[i])
+    print('Y: {0} - Y predicted: {1} ({2:.2f})'.format(y[i], y_hat, prob))
 
 
 
