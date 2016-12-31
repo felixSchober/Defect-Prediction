@@ -15,6 +15,7 @@ import uuid
 import logging
 import cv2 as cv
 
+
 def create_dir_if_necessary(path):
     """ Save way for creating a directory (if it does not exist yet). 
     From http://stackoverflow.com/questions/273192/in-python-check-if-a-directory-exists-and-create-it-if-necessary
@@ -805,3 +806,10 @@ def visulize_matches(matches, k2, k1, img2, img1):
         cv.line(view, pt1, pt2, color)
     return view
 
+def colored_shell_seq(color):
+    if color == 'RED':
+        return '\033[31m'
+    elif color == 'GREEN':
+        return '\033[32m'
+    elif color == 'WHITE':
+        return '\033[37m'
