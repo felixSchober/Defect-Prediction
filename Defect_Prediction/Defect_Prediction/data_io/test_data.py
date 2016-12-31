@@ -66,7 +66,7 @@ def find_files_recursively(current_path, current_index, source_file_dict={}, fil
             source_file_dict = find_files_recursively(current_path + folder + '/', current_index + '.' + folder, source_file_dict, file_extension)
         return source_file_dict
 
-def load_bug_data(bug_data_path, class_info_mapping, number_of_bugs_mapping):
+def load_bug_data(bug_data_path, class_info_mapping, number_of_bugs_mapping, binary_class_labels):
     logger.debug('Initializing bug data set with parameters {0} - {1}'.format(class_info_mapping, number_of_bugs_mapping))
     if not bug_data_path.endswith('.csv'):
         raise AttributeError('Only .csv files are supported.')
@@ -76,7 +76,13 @@ def load_bug_data(bug_data_path, class_info_mapping, number_of_bugs_mapping):
     bug_data_dict = {}
     for entry in get_csv_row_generator(bug_data_path, delimiter=',', skip_first_row=True):
         logger.debug('\tBugs: {1} \t-> Class: {0}'.format(entry[class_info_mapping], entry[number_of_bugs_mapping]))
-        bug_data_dict[entry[class_info_mapping]] = entry[number_of_bugs_mapping]
+        
+        # precise mapping
+        if binary_class_labels:
+            bug_data_dict[entry[class_info_mapping]] = 1 if int(entry[number_of_bugs_mapping]) > 0 else 0 # Binary mapping. No Bug: 0 - Bug: 1
+        else:
+            bug_data_dict[entry[class_info_mapping]] = entry[number_of_bugs_mapping] # Class is number of bugs
+
     return bug_data_dict
         
 def map_bug_data(source_files, bug_data):
@@ -92,7 +98,7 @@ def map_bug_data(source_files, bug_data):
 class DefectDataSetLoader(object):
     """description of class"""
 
-    def __init__(self, source_root_path_list=[], bug_data_path_list=[], source_files_extension=('.java'), one_hot=True):
+    def __init__(self, source_root_path_list=[], bug_data_path_list=[], source_files_extension=('.java'), one_hot=True, binary_class_labels=True):
         
         if len(source_root_path_list) == 0 or len(bug_data_path_list) == 0 or len(source_root_path_list) != len(bug_data_path_list):
             raise AttributeError('Parameter source_root_path_list or bug_data_path_list are either empty or do not contain the same number of dirs.')
@@ -122,6 +128,9 @@ class DefectDataSetLoader(object):
         # for example: [(0, 500), ...] would mean that features from index 0 to 500 belong to project 0 and features from 501 to X belong to another project.
         # list of tuples. [(start_index, end_index)]
         self.test_data_project_indices = []
+
+        # convert bug number to binary labels (0: No Bug - 1: Bug)
+        self.binary_class_labels = binary_class_labels
 
         self.test_data_X = []
         self.test_data_Y = []
@@ -354,7 +363,7 @@ class DefectDataSetLoader(object):
         return feature_vector
 
 
-    def __prepare_data(self, rare_token_number=3):
+    def __prepare_data(self, rare_token_number=5):
         """
         1. Convert to numpy array
         2. Filter every token if occurence is less than 3
@@ -467,6 +476,17 @@ class DataSet(object):
         _, fc = self.most_frequent_class
         return fc / self.__num_examples
 
+    def get_random_elements(self, num_elements=1, seed=42):
+        if not seed is None:
+            np.random.seed(seed=seed)
+        
+        # get indices of elements to sample
+        indices = np.random.choice(np.arange(self.__num_examples), size=num_elements, replace=False)
+
+        X_sample = self.__X[indices]
+        y_sample = self.__y[indices]
+
+        return X_sample, y_sample
 
 
     def next_batch(self, batch_size):
