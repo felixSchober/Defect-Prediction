@@ -59,10 +59,11 @@ class TensorFlowNet(object):
                 initial_learning_rate=0.1, 
                 architecture_shape=(1024, 64), 
                 log_dir=TF_LOG_DIR, 
-                max_steps=20000,
+                max_steps=40000,
                 num_epochs_per_decay=350,
                 learning_rate_decay_factor=0.1,
-                model_name=str(int(time.time()))):
+                model_name=str(int(time.time())),
+                early_stopping_steps = 5000):
         self.sess = None
         self.saver = None
         self.train = train_data_set
@@ -93,6 +94,9 @@ class TensorFlowNet(object):
         self.best_train_precission = 0
         self.best_test_loss = np.inf
         self.best_test_precission = 0
+
+        self.last_test_loss_improvement = 0
+        self.early_stopping_steps = early_stopping_steps
 
         self.model_name = model_name
 
@@ -292,7 +296,8 @@ class TensorFlowNet(object):
 
                 assert not np.isnan(train_loss_value), 'Model diverged with loss = NaN'
 
-                
+                # if early stopping is True abort training and write a last summary
+                early_stopping = self.early_stopping(step, test_loss_value)
 
                 # Write summaries
                 if step % 200 == 0:
@@ -322,11 +327,28 @@ class TensorFlowNet(object):
                         except:
                             logger.exception('Could not save model.')
 
-                    self.print_step_summary(step, train_loss_value, train_precision, test_loss_value, test_precision, duration, colored=True)
+                    self.print_step_summary_and_update_best_values(step, train_loss_value, train_precision, test_loss_value, test_precision, duration, colored=True)
+
+                if early_stopping:
+                    print('-----\n\n')
+                    logger.info('Early stopping after {0} steps.'.format(step))                    
+                    break
+            logger.info('Training complete.')
+            logger.info('Best Losses: Train {0:.5f} - Test: {1:.5f}'.format(self.best_train_loss, self.best_test_loss)) 
+            logger.info('Best Precisions: Train {0:.5f} - Test: {1:.5f}'.format(self.best_train_precission, self.best_test_precission)) 
 
     def model_improved(self, test_loss_value):
         return test_loss_value < self.best_test_loss
-     
+
+
+    def early_stopping(self, step, test_loss):
+        if not self.model_improved(test_loss):
+            # when did the model last improve?
+            improvement = step - self.last_test_loss_improvement
+            if improvement > self.early_stopping_steps:
+                return True
+        return False
+
 
     def predict(self, X):
         X = X.reshape((1,X.shape[0]))
@@ -340,7 +362,7 @@ class TensorFlowNet(object):
         return label, y[0][label]
 
 
-    def print_step_summary(self, step, train_loss, train_precission, test_loss, test_precission, duration, colored=True):
+    def print_step_summary_and_update_best_values(self, step, train_loss, train_precission, test_loss, test_precission, duration, colored=True):
         
         # print table header again after every 3000th step
         if step % 5000 == 0 and step > 0:
@@ -357,6 +379,7 @@ class TensorFlowNet(object):
 
         if test_loss < self.best_test_loss:
             self.best_test_loss = test_loss
+            self.last_test_loss_improvement = step
             te_l_color = utils.colored_shell_seq('GREEN')
 
         if train_precission > self.best_train_precission:

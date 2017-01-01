@@ -53,7 +53,7 @@ save_data_set = True
 
 test_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.6.0-src/src/main', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/apache-ant-1.7.0-src/apache-ant-1.7.0/src/main']
 bug_data_path = ['C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.6.csv', 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/ant-1.7.csv']
-#load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
+load_test_data = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/'
 
 
 data_set_loader = DefectDataSetLoader(test_data_path, bug_data_path, source_files_extension='.java', one_hot=False, binary_class_labels=True)
@@ -82,9 +82,9 @@ net = TensorFlowNet(
     data_set_loader.num_classes, 
     50, 
     initial_learning_rate=0.01, 
-    architecture_shape=(64,16), 
-    log_dir='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/tf',
-    max_steps=20000
+    architecture_shape=(256,32), 
+    max_steps=40000,
+    model_name='early_stopping'
     )
 net.run_training()
 num_prediction_tests = 10
