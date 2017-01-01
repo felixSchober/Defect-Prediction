@@ -8,6 +8,7 @@ import time
 import os.path
 import sys
 import logging
+from enum import Enum
 import colorama
 
 from misc import utils
@@ -19,7 +20,7 @@ tf.set_random_seed(42)
 TF_LOG_CREATE_SUB_DIR = True
 TF_LOG_DIR = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/tf/'
 
-
+TF_LAYER = Enum('Layertype', 'Dense Dropout')
 
 def get_weights_variable(dim_x, dim_y, std_dev=1.0, name='weights'):
     weights = tf.Variable(
@@ -50,6 +51,114 @@ def fill_feed_dict(data_set, features_placeholders, targets_placeholders, keep_p
     }
     return feed_dict
 
+def get_dense_layer(input_tensor, input_shape, layer_size, name, create_summary=True):
+    # Layer:
+    with tf.variable_scope(name) as scope:
+        weights = get_weights_variable(input_shape, layer_size)            
+        biases = get_bias_variable(layer_size)
+        layer_tensor = tf.nn.relu(tf.matmul(input_tensor, weights) + biases, name=scope.name)
+        if create_summary:
+            activation_summary(layer_tensor)
+    return layer_tensor
+
+def get_dropout_layer(input_tensor, keep_prob_pl, name):
+    # Dropout:
+    with tf.variable_scope(name) as scope:
+        dropout_tensor = tf.nn.dropout(input_tensor, keep_prob_pl)
+    return dropout_tensor
+
+
+def inference(input_shape, output_shape, architecture, features_pl, keep_prob_pl):
+        """Build the defect prediction model.
+
+        Args:
+            input_shape: Length of the feature vector
+            output_shape: num_classes = num_neurons in the last layer
+            architecture: List of layers. Format: [(TF_LAYER.Dense|Dropout, SIZE_OF_LAYER, NAME)]
+            features_pl: feature placeholder
+            keep_prob_pl: dropout keep placeholder
+
+        Returns:
+            Logits Tensor.
+        """
+
+        # Hidden Layers
+        predecessor_tensor = features_pl
+        predecessor_shape = input_shape
+        for type, size, name in architecture:
+            if type == TF_LAYER.Dense:
+                layer_tensor = get_dense_layer(predecessor_tensor, predecessor_shape, size, name)
+                predecessor_shape = size
+            elif type == TF_LAYER.Dropout:
+                if keep_prob_pl is None:
+                    raise AttributeError('Model contains dropout layer but keep_prob placeholder is not specified.')
+                layer_tensor = get_dropout_layer(predecessor_tensor, keep_prob_pl, name)
+            predecessor_tensor = layer_tensor            
+                    
+        # Output:
+        with tf.variable_scope('softmax_linear') as scope:
+            weights = get_weights_variable(predecessor_shape, output_shape)
+            biases = get_bias_variable(output_shape)
+            logit_tensor = tf.add(tf.matmul(predecessor_tensor, weights), biases, name=scope.name)
+            activation_summary(logit_tensor)
+        return logit_tensor
+
+
+def loss(logit_tensor, targets_pl):
+        """Add L2Loss to all the trainable variables.
+
+        Add summary for "Loss" and "Loss/avg".
+        Args:
+        logits: Logits from inference().
+        labels: Targets Placeholder. 1-D tensor of shape [batch_size]
+
+        Returns:
+        Loss tensor of type float.
+        """
+        targets = tf.to_int64(targets_pl)
+
+        # calculate the average cross entropy loss across the batch.
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logit_tensor, targets, name='cross_entropy_per_example')
+        cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
+        tf.add_to_collection('losses', cross_entropy_mean)
+        tf.summary.scalar('loss', cross_entropy_mean)
+        return cross_entropy_mean
+
+def validate_architecture(architecture):
+    if architecture is None:
+        raise AttributeError('Architecture is None.')
+    if len(architecture) == 0:
+        raise AttributeError('Architecture does not contain a layer.')
+
+    # validate every layer
+    names = []
+    for layer in architecture:
+
+        if len(layer) != 3:
+            raise AttributeError('Architecture contains invalid entries.')
+
+        type, size, name = layer
+
+        # check type
+        if type != TF_LAYER.Dense and type != TF_LAYER.Dropout:
+            raise AttributeError('Architecture contains an invalid layer type.')
+            
+        # check if size is an int
+        try:
+            size += 1
+        except:
+            raise AttributeError('Architecture size contains an invalid size.')
+
+        if name == '':
+            raise AttributeError('Architecture contains a layer without a name.')
+
+        if name in names:
+            raise AttributeError('Architecture contains the same name for two different layers.')
+        names.append(name)
+
+        
+         
+
 class TensorFlowNet(object):
     """description of class"""
 
@@ -59,13 +168,13 @@ class TensorFlowNet(object):
                 num_classes, 
                 batch_size, 
                 initial_learning_rate=0.1, 
-                architecture_shape=(1024, 64), 
+                architecture_shape=[(TF_LAYER.Dense, 1024, 'hidden1'), (TF_LAYER.Dense, 64, 'hidden2'), (TF_LAYER.Dropout, 0.6, 'dropout1')], 
                 log_dir=TF_LOG_DIR, 
                 max_steps=40000,
                 num_epochs_per_decay=350,
                 learning_rate_decay_factor=0.1,
                 model_name=str(int(time.time())),
-                early_stopping_steps = 5000):
+                early_stopping_steps = 10000):
         self.sess = None
         self.saver = None
         self.train = train_data_set
@@ -73,8 +182,9 @@ class TensorFlowNet(object):
         self.batch_size = batch_size
         self.num_classes = num_classes
         
-        self.hidden_1_size = architecture_shape[0]
-        self.hidden_2_size = architecture_shape[1]
+        validate_architecture(architecture_shape)
+        self.model_architecture = architecture_shape
+
         self.max_steps = max_steps
         
 
@@ -110,67 +220,7 @@ class TensorFlowNet(object):
         colorama.init()
         
 
-    def inference(self, features_pl, keep_prob_pl, hidden1_size, hidden2_size):
-        """Build the defect prediction model.
-
-        Args:
-            features_pl: feature placeholder
-            hidden1_size: number of neurons in the first hidden layer
-            hidden2_size: number of neurons in the second hidden layer
-
-        Returns:
-            Logits.
-        """
-
-        # Layer 1:
-        with tf.variable_scope('hidden1') as scope:
-            weights = get_weights_variable(self.train.feature_shape[1], hidden1_size)            
-            biases = get_bias_variable(hidden1_size)
-            hidden1_tensor = tf.nn.relu(tf.matmul(features_pl, weights) + biases, name=scope.name) # TODO: change to relu_layer
-            activation_summary(hidden1_tensor)
-
-        # Layer 2:
-        with tf.variable_scope('hidden2') as scope:
-            weights = get_weights_variable(hidden1_size, hidden2_size)
-            biases = get_bias_variable(hidden2_size)
-            hidden2_tensor = tf.nn.relu(tf.matmul(hidden1_tensor, weights) + biases, name=scope.name)
-            activation_summary(hidden2_tensor)
-
-        # Dropout
-        with tf.variable_scope('dropout') as scope:
-            dropout1_tensor = tf.nn.dropout(hidden2_tensor, keep_prob_pl)
-
-        # Output:
-        with tf.variable_scope('softmax_linear') as scope:
-            weights = get_weights_variable(hidden2_size, self.num_classes)
-            biases = get_bias_variable(self.num_classes)
-            logit_tensor = tf.add(tf.matmul(dropout1_tensor, weights), biases, name=scope.name)
-            activation_summary(logit_tensor)
-        return logit_tensor
-
-
-    def loss(self, logit_tensor, targets_pl):
-        """Add L2Loss to all the trainable variables.
-
-        Add summary for "Loss" and "Loss/avg".
-        Args:
-        logits: Logits from inference().
-        labels: Targets Placeholder. 1-D tensor of shape [batch_size]
-
-        Returns:
-        Loss tensor of type float.
-        """
-        targets = tf.to_int64(targets_pl)
-
-        # calculate the average cross entropy loss across the batch.
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logit_tensor, targets, name='cross_entropy_per_example')
-        cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
-        tf.add_to_collection('losses', cross_entropy_mean)
-        tf.summary.scalar('loss', cross_entropy_mean)
-        return cross_entropy_mean
-
     
-
     def get_train_op(self, loss_tensor, global_step):
 
         # decay learning rate based on the number of steps (global_step)
@@ -184,7 +234,7 @@ class TensorFlowNet(object):
                                                    name='learning_rate_decay')
         tf.summary.scalar('learning_rate', learning_rate)
 
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate)
 
         # apply the gradients to minimize loss.
         # for each minization increment global_step counter
@@ -226,10 +276,14 @@ class TensorFlowNet(object):
         logger.info('\tTest Zero Error: {0}'.format(self.test.zero_error))
         logger.debug('\tBatch Size: {0}'.format(self.batch_size))
         logger.debug('\tMax Steps: {0}'.format(self.max_steps))
-        logger.debug('\tLayer 1 Size: {0}'.format(self.hidden_1_size))
-        logger.debug('\tLayer 2 Size: {0}'.format(self.hidden_2_size))
         logger.debug('\tNum Classes: {0}'.format(self.num_classes))
-        logger.debug('\tLearning rate: {0}'.format(self.initial_learning_rate))
+        logger.debug('\tInitial Learning rate: {0}'.format(self.initial_learning_rate))
+        
+        # print model architecture
+        logger.debug('Network architecture')
+        for type, size, name in self.model_architecture:
+            logger.info('\t\t{0} {1}\t: {2}'.format(type, size, name))
+
 
         with tf.Graph().as_default():
 
@@ -241,11 +295,15 @@ class TensorFlowNet(object):
             self.keep_prob_pl = keep_prob_pl
 
             # build the model
-            logit_tensor = self.inference(features_pl, keep_prob_pl, self.hidden_1_size, self.hidden_2_size)
+            try:
+                logit_tensor = inference(self.train.feature_shape[1], self.num_classes, self.model_architecture, features_pl, keep_prob_pl)
+            except Exception as e:
+                logger.exception('Could not create model.')
+                raise e
             self.model = logit_tensor
 
             # add loss tensor to graph
-            loss_tensor = self.loss(logit_tensor, targets_pl)
+            loss_tensor = loss(logit_tensor, targets_pl)
 
 
             # create gradient training op

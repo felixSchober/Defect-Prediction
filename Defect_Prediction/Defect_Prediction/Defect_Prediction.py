@@ -1,7 +1,7 @@
 import argparse
 import logging
 from data_io.test_data import DefectDataSetLoader, DataSet
-from prediction.tf_model import TensorFlowNet
+from prediction.tf_model import TensorFlowNet, TF_LAYER
 
 
 def create_loggers():
@@ -81,10 +81,10 @@ net = TensorFlowNet(
     test, 
     data_set_loader.num_classes, 
     50, 
-    initial_learning_rate=0.01, 
-    architecture_shape=(256,32), 
+    initial_learning_rate=1e-5, 
+    architecture_shape=[(TF_LAYER.Dense, 1024, 'hidden1'), (TF_LAYER.Dense, 256, 'hidden2'), (TF_LAYER.Dropout, 0.5, 'dropout1')], 
     max_steps=40000,
-    model_name='dropout'
+    model_name='adagrad_2'
     )
 net.run_training()
 num_prediction_tests = 10
