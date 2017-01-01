@@ -16,6 +16,11 @@ logger = logging.getLogger('prediction')
 
 tf.set_random_seed(42)
 
+TF_LOG_CREATE_SUB_DIR = True
+TF_LOG_DIR = 'C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/tf/'
+
+
+
 def get_weights_variable(dim_x, dim_y, std_dev=1.0, name='weights'):
     weights = tf.Variable(
         tf.truncated_normal([dim_x, dim_y], stddev=std_dev / math.sqrt(float(dim_x))),
@@ -53,10 +58,11 @@ class TensorFlowNet(object):
                 batch_size, 
                 initial_learning_rate=0.1, 
                 architecture_shape=(1024, 64), 
-                log_dir='C:/Users/felix/OneDrive/Studium/Studium/2. Semester/Seminar/Project/Training/tf', 
+                log_dir=TF_LOG_DIR, 
                 max_steps=20000,
                 num_epochs_per_decay=350,
-                learning_rate_decay_factor=0.1):
+                learning_rate_decay_factor=0.1,
+                model_name=str(int(time.time()))):
         self.sess = None
         self.saver = None
         self.train = train_data_set
@@ -67,7 +73,7 @@ class TensorFlowNet(object):
         self.hidden_1_size = architecture_shape[0]
         self.hidden_2_size = architecture_shape[1]
         self.max_steps = max_steps
-        self.log_dir = log_dir 
+        
 
         self.initial_learning_rate = initial_learning_rate
 
@@ -88,6 +94,13 @@ class TensorFlowNet(object):
         self.best_test_loss = np.inf
         self.best_test_precission = 0
 
+        self.model_name = model_name
+
+        if TF_LOG_CREATE_SUB_DIR:
+            self.log_dir = os.path.join(log_dir, self.model_name)
+            utils.create_dir_if_necessary(self.log_dir)
+        else:
+            self.log_dir = log_dir 
         colorama.init()
         
 
@@ -323,7 +336,10 @@ class TensorFlowNet(object):
 
 
     def print_step_summary(self, step, train_loss, train_precission, test_loss, test_precission, duration, colored=True):
-        #print('Step (in hundreds)\tTrain Loss\tTrain precission\tTest Loss\tTest precission\tDuration')    
+        
+        # print table header again after every 3000th step
+        if step % 5000 == 0 and step > 0:
+            print('\nStep (in hundreds)\tTrain Loss\tTrain precission\tTest Loss\tTest precission\tDuration')    
            
         tr_l_color = utils.colored_shell_seq('WHITE')
         te_l_color = utils.colored_shell_seq('WHITE')
@@ -346,10 +362,10 @@ class TensorFlowNet(object):
             self.best_test_precission = test_precission
             te_p_color = utils.colored_shell_seq('GREEN')
 
-        train_string = tr_l_color + '{0:.3f}\t\t'.format(train_loss) + tr_p_color + '{0:.3f}\t\t'.format(train_precission)
-        test_string = te_l_color + '{0:.3f}\t\t'.format(test_loss) + te_p_color + '{0:.3f}\t\t'.format(test_precission)
+        train_string = tr_l_color + '{0:.3f}\t\t'.format(train_loss) + tr_p_color + '{0:.1f}%\t\t\t'.format(train_precission*100)
+        test_string = te_l_color + '{0:.3f}\t\t'.format(test_loss) + te_p_color + '{0:.1f}%\t\t'.format(test_precission*100)
 
-        print('{0}\t\t\t\t'.format(step/100) + train_string + test_string + utils.colored_shell_seq('WHITE') + '{0:.3f}'.format(duration))
+        print('{0}\t\t\t'.format(step/100) + train_string + test_string + utils.colored_shell_seq('WHITE') + '{0:.3f}'.format(duration))
               
 
 
