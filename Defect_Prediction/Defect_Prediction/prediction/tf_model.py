@@ -156,7 +156,7 @@ class TensorFlowNet(object):
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logit_tensor, targets, name='cross_entropy_per_example')
         cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
         tf.add_to_collection('losses', cross_entropy_mean)
-
+        tf.summary.scalar('loss', cross_entropy_mean)
         return cross_entropy_mean
 
     
@@ -173,9 +173,6 @@ class TensorFlowNet(object):
                                                    staircase=True,
                                                    name='learning_rate_decay')
         tf.summary.scalar('learning_rate', learning_rate)
-        tf.summary.scalar('loss', loss_tensor)
-
-        #tf.summary.scalar(loss_tensor.op.name, loss_tensor)
 
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 
@@ -189,6 +186,12 @@ class TensorFlowNet(object):
 
         return train_op
 
+    def evaluate(self, logit_tensor, targets_pl):
+        correct = tf.nn.in_top_k(logit_tensor, targets_pl, 1)
+
+        # get the number of correct entries
+        correct_sum = tf.reduce_sum(tf.cast(correct, tf.int32))
+        return correct_sum
 
     def do_eval(self, eval_correct_tensor, features_pl, targets_pl, data_set):
 
@@ -203,12 +206,7 @@ class TensorFlowNet(object):
         return num_examples, true_count, precision
 
 
-    def evaluate(self, logit_tensor, targets_pl):
-        correct = tf.nn.in_top_k(logit_tensor, targets_pl, 1)
-
-        # get the number of correct entries
-        correct_sum = tf.reduce_sum(tf.cast(correct, tf.int32))
-        return correct_sum
+    
 
     def run_training(self):
         logger.info('Building NN model. Attributes:')
@@ -238,10 +236,11 @@ class TensorFlowNet(object):
             # add loss tensor to graph
             loss_tensor = self.loss(logit_tensor, targets_pl)
 
+
             # create gradient training op
             train_op = self.get_train_op(loss_tensor, global_step)
 
-            # add evaluation step 
+            # add evaluation op for the training and test set.
             eval_correct = self.evaluate(logit_tensor, targets_pl)
 
             # Build the summary Tensor based on the TF collection of Summaries.
@@ -256,7 +255,8 @@ class TensorFlowNet(object):
             self.sess = tf.Session()
 
             # initialize a SummaryWriter which writes a log file
-            summary_writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
+            summary_writer_train = tf.summary.FileWriter(os.path.join(self.log_dir, 'train'), self.sess.graph)
+            summary_writer_test = tf.summary.FileWriter(os.path.join(self.log_dir, 'test'), self.sess.graph)
 
             # initialize variables
             self.sess.run(init)
@@ -268,9 +268,9 @@ class TensorFlowNet(object):
             print('Step (in hundreds)\tTrain Loss\tTrain precission\tTest Loss\tTest precission\tDuration')    
             print('=====================================================================================================')      
 
-            # start training            
-            for step in range(self.max_steps):
-                start_time = time.time()
+            # start training    
+            start_time = time.time()        
+            for step in range(self.max_steps):                
 
                 # fill feed dict with batch
                 train_feed_dict = fill_feed_dict(self.train, features_pl, targets_pl, self.batch_size)
@@ -297,31 +297,36 @@ class TensorFlowNet(object):
                 # Write summaries
                 if step % 200 == 0:
                     duration = time.time() - start_time
-                    
+                    start_time = time.time()    
+
                     train_num_examples, train_true_count, train_precision = self.do_eval(eval_correct, features_pl, targets_pl, self.train)
                     test_num_examples, test_true_count, test_precision = self.do_eval(eval_correct, features_pl, targets_pl, self.test)
 
                     logger.debug('Train: Num examples: {0}\tNum correct: {1}\tPrecision: {2:.4f}'.format(train_num_examples, train_true_count, train_precision))
                     logger.debug('Test: Num examples: {0}\tNum correct: {1}\tPrecision: {2:.4f}'.format(test_num_examples, test_true_count, test_precision))
                     logger.debug('{0}\t\t{1:.4f}\t{2:.5f}'.format(step/100, train_loss_value, duration))                  
+                                        
+                    summary_str_train = self.sess.run(summary_tensor, feed_dict=train_feed_dict)
+                    summary_str_test = self.sess.run(summary_tensor, feed_dict=test_feed_dict)
+
+                    summary_writer_train.add_summary(summary_str_train, step)
+                    summary_writer_train.flush()
+                    summary_writer_test.add_summary(summary_str_test, step)
+                    summary_writer_test.flush()
+
+                    # only save checkpoint if the test loss improved
+                    if self.model_improved(test_loss_value):
+                        checkpoint_file = os.path.join(self.log_dir, 'model.ckpt')                    
+                        try:
+                            self.save_model(checkpoint_file, step)
+                        except:
+                            logger.exception('Could not save model.')
 
                     self.print_step_summary(step, train_loss_value, train_precision, test_loss_value, test_precision, duration, colored=True)
-                    
-                    tf.summary.scalar('Train_Loss', tf.Variable(train_loss_value, trainable=False, name='train_loss_value'))
-                    tf.summary.scalar('Test_Loss', tf.Variable(test_loss_value, trainable=False, name='test_loss_value'))
-                    summary_str = self.sess.run(summary_tensor, feed_dict=train_feed_dict)
-                    summary_writer.add_summary(summary_str, step)
-                    summary_writer.flush()
 
-                # Save checkpoint
-                if (step + 1) % 1000 == 0 or (step + 1) == self.max_steps:
-                    checkpoint_file = os.path.join(self.log_dir, 'model.ckpt')                    
-                    try:
-                        self.save_model(checkpoint_file, step)
-                    except:
-                        logger.exception('Could not save model.')
-
-                    
+    def model_improved(self, test_loss_value):
+        return test_loss_value < self.best_test_loss
+     
 
     def predict(self, X):
         X = X.reshape((1,X.shape[0]))
