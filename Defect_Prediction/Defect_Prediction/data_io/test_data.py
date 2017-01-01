@@ -196,7 +196,7 @@ class DefectDataSetLoader(object):
             logger.debug('Finished indexing of source folder for project {0} ({1}). Found {2} files.'.format(i, project_source_path, len(self.__source_files[i])))
 
             # iterate over bug data
-            self.__bug_data[i] = load_bug_data(project_bug_path, class_info_mapping, number_of_bugs_mapping)
+            self.__bug_data[i] = load_bug_data(project_bug_path, class_info_mapping, number_of_bugs_mapping, self.binary_class_labels)
             logger.debug('Finished indexing of bug data for project {0} ({1}). Found data for {2} classes.'.format(i, project_bug_path, len(self.__bug_data[i])))
 
             # map bug data 
