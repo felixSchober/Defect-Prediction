@@ -84,7 +84,7 @@ net = TensorFlowNet(
     initial_learning_rate=0.01, 
     architecture_shape=(256,32), 
     max_steps=40000,
-    model_name='early_stopping'
+    model_name='dropout'
     )
 net.run_training()
 num_prediction_tests = 10

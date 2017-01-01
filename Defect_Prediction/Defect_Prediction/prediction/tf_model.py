@@ -33,18 +33,20 @@ def get_bias_variable(num_neurons, name='biases'):
     return biases
 
 
-def get_input_placeholders(X_feature_vector_length, batch_size, num_classes):
+def get_placeholders(X_feature_vector_length, batch_size, num_classes):
     input_features_placeholders = tf.placeholder(tf.float32, shape=(None, X_feature_vector_length))
     targets_placeholder = tf.placeholder(tf.int32, shape=(batch_size))
-    return input_features_placeholders, targets_placeholder
+    keep_prob_placeholder = tf.placeholder(tf.float32)
+    return input_features_placeholders, targets_placeholder, keep_prob_placeholder
 
 
-def fill_feed_dict(data_set, features_placeholders, targets_placeholders, batch_size):
+def fill_feed_dict(data_set, features_placeholders, targets_placeholders, keep_prob_placeholder, keep_prob, batch_size):
     features_feed, targets_feed = data_set.next_batch(batch_size)
 
     feed_dict = {
         features_placeholders: features_feed,
         targets_placeholders: targets_feed,
+        keep_prob_placeholder: keep_prob
     }
     return feed_dict
 
@@ -108,7 +110,7 @@ class TensorFlowNet(object):
         colorama.init()
         
 
-    def inference(self, features_pl, hidden1_size, hidden2_size):
+    def inference(self, features_pl, keep_prob_pl, hidden1_size, hidden2_size):
         """Build the defect prediction model.
 
         Args:
@@ -134,11 +136,15 @@ class TensorFlowNet(object):
             hidden2_tensor = tf.nn.relu(tf.matmul(hidden1_tensor, weights) + biases, name=scope.name)
             activation_summary(hidden2_tensor)
 
+        # Dropout
+        with tf.variable_scope('dropout') as scope:
+            dropout1_tensor = tf.nn.dropout(hidden2_tensor, keep_prob_pl)
+
         # Output:
         with tf.variable_scope('softmax_linear') as scope:
             weights = get_weights_variable(hidden2_size, self.num_classes)
             biases = get_bias_variable(self.num_classes)
-            logit_tensor = tf.add(tf.matmul(hidden2_tensor, weights), biases, name=scope.name)
+            logit_tensor = tf.add(tf.matmul(dropout1_tensor, weights), biases, name=scope.name)
             activation_summary(logit_tensor)
         return logit_tensor
 
@@ -197,14 +203,14 @@ class TensorFlowNet(object):
         correct_sum = tf.reduce_sum(tf.cast(correct, tf.int32))
         return correct_sum
 
-    def do_eval(self, eval_correct_tensor, features_pl, targets_pl, data_set):
+    def do_eval(self, eval_correct_tensor, features_pl, targets_pl, keep_prob_pl, data_set):
 
         # number of correct predictions
         true_count = 0
         steps_per_epoch = data_set.num_examples // self.batch_size
         num_examples = steps_per_epoch * self.batch_size
         for step in range(steps_per_epoch):
-            feed_dict = fill_feed_dict(data_set, features_pl, targets_pl, self.batch_size)
+            feed_dict = fill_feed_dict(data_set, features_pl, targets_pl, keep_prob_pl, 1.0, self.batch_size)
             true_count += self.sess.run(eval_correct_tensor, feed_dict=feed_dict)
         precision = true_count / num_examples
         return num_examples, true_count, precision
@@ -230,11 +236,12 @@ class TensorFlowNet(object):
             global_step = tf.Variable(0, trainable=False, name='global_step')
 
             # Generate the input placeholders
-            features_pl, targets_pl = get_input_placeholders(self.train.feature_shape[1], self.batch_size, self.num_classes)
+            features_pl, targets_pl, keep_prob_pl = get_placeholders(self.train.feature_shape[1], self.batch_size, self.num_classes)
             self.features_pl = features_pl
+            self.keep_prob_pl = keep_prob_pl
 
             # build the model
-            logit_tensor = self.inference(features_pl, self.hidden_1_size, self.hidden_2_size)
+            logit_tensor = self.inference(features_pl, keep_prob_pl, self.hidden_1_size, self.hidden_2_size)
             self.model = logit_tensor
 
             # add loss tensor to graph
@@ -277,8 +284,8 @@ class TensorFlowNet(object):
             for step in range(self.max_steps):                
 
                 # fill feed dict with batch
-                train_feed_dict = fill_feed_dict(self.train, features_pl, targets_pl, self.batch_size)
-                test_feed_dict = fill_feed_dict(self.test, features_pl, targets_pl, self.batch_size)
+                train_feed_dict = fill_feed_dict(self.train, features_pl, targets_pl, keep_prob_pl, keep_prob=0.5, batch_size=self.batch_size)
+                test_feed_dict = fill_feed_dict(self.test, features_pl, targets_pl, keep_prob_pl, keep_prob=1.0, batch_size=self.batch_size)
 
                 # run the model
                 # _: result of train_op (is None)
@@ -304,8 +311,8 @@ class TensorFlowNet(object):
                     duration = time.time() - start_time
                     start_time = time.time()    
 
-                    train_num_examples, train_true_count, train_precision = self.do_eval(eval_correct, features_pl, targets_pl, self.train)
-                    test_num_examples, test_true_count, test_precision = self.do_eval(eval_correct, features_pl, targets_pl, self.test)
+                    train_num_examples, train_true_count, train_precision = self.do_eval(eval_correct, features_pl, targets_pl, keep_prob_pl, self.train)
+                    test_num_examples, test_true_count, test_precision = self.do_eval(eval_correct, features_pl, targets_pl, keep_prob_pl, self.test)
 
                     logger.debug('Train: Num examples: {0}\tNum correct: {1}\tPrecision: {2:.4f}'.format(train_num_examples, train_true_count, train_precision))
                     logger.debug('Test: Num examples: {0}\tNum correct: {1}\tPrecision: {2:.4f}'.format(test_num_examples, test_true_count, test_precision))
@@ -352,7 +359,7 @@ class TensorFlowNet(object):
 
     def predict(self, X):
         X = X.reshape((1,X.shape[0]))
-        feed_dict = {self.features_pl: X}
+        feed_dict = {self.features_pl: X, self.keep_prob_pl: 1.0}
         softmax = tf.nn.softmax(self.model)
         activations = softmax.eval(session=self.sess, feed_dict=feed_dict)
         y = activations / sum(activations[0])
