@@ -32,7 +32,7 @@ def to_one_hot(y):
     lb = LabelBinarizer()
     lb.fit(y)
     Y = lb.transform(y)
-    return (Y, lb.classes_)
+    return (Y.base, lb.classes_)
 
 def find_files_recursively(current_path, current_index, source_file_dict={}, file_extension='.java'):
         # search for source files in current path
@@ -257,9 +257,14 @@ class DefectDataSetLoader(object):
         logger.debug('Loaded test data. test_X shape: {0} - test_Y shape: {1} - Number of custom tokens: {2}'.format(self.test_data_X.shape, self.test_data_Y.shape, len(self.token_mapping_names)))
 
 
-    def get_test_train_split(self, test_ratio=0.2, random_seed=42):
+    def get_test_train_split(self, test_ratio=0.2, random_seed=42, stratify=True):
         logger.debug('Generating train/test split with test_size {0} and random_state {1}'.format(test_ratio, random_seed))
-        X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size=test_ratio, random_state=random_seed)
+
+        if stratify:
+            X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size=test_ratio, random_state=random_seed, stratify=self.test_data_Y)
+            logger.debug('Stratify: True')
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(self.test_data_X, self.test_data_Y, test_size=test_ratio, random_state=random_seed)
         logger.debug('Testset Split:')
         logger.debug('\tTrain Shape: {0} - {1}'.format(X_train.shape, y_train.shape))
         logger.debug('\tTest Shape: {0} - {1}'.format(X_test.shape, y_test.shape))
@@ -363,7 +368,7 @@ class DefectDataSetLoader(object):
         return feature_vector
 
 
-    def __prepare_data(self, rare_token_number=5):
+    def __prepare_data(self, rare_token_number=10):
         """
         1. Convert to numpy array
         2. Filter every token if occurence is less than 3
@@ -438,7 +443,8 @@ class DataSet(object):
         # will be set in initialize 
         self.__num_examples = targets.shape[0]
 
-        self.one_hot = one_hot
+        if one_hot:
+            self.__y = to_one_hot(self.__y)[0]
         
 
     @property
@@ -459,7 +465,7 @@ class DataSet(object):
 
     @property
     def num_classes(self):
-        return self.__num_classes
+        return np.max(self.__y) + 1
 
     @property
     def epochs_completed(self):
@@ -479,6 +485,10 @@ class DataSet(object):
     def get_random_elements(self, num_elements=1, seed=42):
         if not seed is None:
             np.random.seed(seed=seed)
+
+        # return all elements if number of elements is -1
+        if num_elements == -1:
+            return self.__X, self.__y
         
         # get indices of elements to sample
         indices = np.random.choice(np.arange(self.__num_examples), size=num_elements, replace=False)
@@ -489,7 +499,7 @@ class DataSet(object):
         return X_sample, y_sample
 
 
-    def next_batch(self, batch_size):
+    def next_batch(self, batch_size, shuffle_data=True):
         start = self.__index_in_epoch
         self.__index_in_epoch += batch_size
 
@@ -498,7 +508,8 @@ class DataSet(object):
             self.__epochs_completed += 1
 
             # reshuffle data for next epoch
-            self.__X, self.__y = shuffle(self.__X, self.__y)
+            if shuffle_data:
+                self.__X, self.__y = shuffle(self.__X, self.__y)
             start = 0
             self.__index_in_epoch = batch_size
 
