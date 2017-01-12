@@ -87,3 +87,4 @@ ENV/
 
 # Rope project settings
 .ropeproject
+/Defect_Prediction/Defect_Prediction/log/tensorflow
