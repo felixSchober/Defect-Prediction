@@ -30,6 +30,7 @@
     <Compile Include="data_io\test_data.py" />
     <Compile Include="data_io\__init__.py" />
     <Compile Include="Defect_Prediction.py" />
+    <Compile Include="helper.py" />
     <Compile Include="misc\utils.py" />
     <Compile Include="misc\__init__.py">
       <SubType>Code</SubType>
